@@ -1,5 +1,6 @@
 const { expect } = require('chai')
 const { ethers } = require('hardhat')
+const { invalid } = require('moment')
 
 const tokens = (n) => {
   return ethers.utils.parseUnits(n.toString(), 'ether')
@@ -131,6 +132,59 @@ describe('Token', () => {
             .approve('0x0000000000000000000000000000000000000000', amount)
         ).to.be.reverted
       })
+    })
+  })
+
+  describe('Delegated Token Transfers', () => {
+    let amount, result, transaction
+
+    beforeEach(async () => {
+      amount = tokens(100)
+      transaction = await token
+        .connect(deployer)
+        .approve(exchange.address, amount)
+      result = await transaction.wait()
+    })
+
+    describe('Success', () => {
+      beforeEach(async () => {
+        transaction = await token
+          .connect(exchange)
+          .transferFrom(deployer.address, receiver.address, amount)
+        result = await transaction.wait()
+      })
+
+      it('transfers token balances', async () => {
+        expect(await token.balanceOf(deployer.address)).to.equal(
+          ethers.utils.parseUnits('999900', 'ether')
+        )
+        expect(await token.balanceOf(receiver.address)).to.be.equal(amount)
+      })
+
+      it('resets the allowance', async () => {
+        expect(
+          await token.allowance(deployer.address, exchange.address)
+        ).to.be.equal(0)
+      })
+
+      it('emits a Transfer event', async () => {
+        const event = result.events[0]
+        expect(event.event).to.equal('Transfer')
+
+        const args = event.args
+        expect(args.from).to.equal(deployer.address)
+        expect(args.to).to.equal(receiver.address)
+        expect(args.value).to.equal(amount)
+      })
+    })
+
+    describe('Failure', async () => {
+      const invalidAmount = tokens(100000000)
+      await expect(
+        token
+          .connect(exchange)
+          .transferFrom(deployer.address, receiver.address, invalidAmount)
+      ).to.be.reverted
     })
   })
 })
